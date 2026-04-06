@@ -13,8 +13,13 @@
 
 **First time only (~5 min):**
 
+1. **Fork this repo** (top-right on this page) — you need your own copy so GitHub Actions runs against your account
+2. Clone your fork and run setup:
+
 ```bash
 brew install terraform gh   # install required tools
+git clone git@github.com:YOUR_USERNAME/astroneer-server-kit.git
+cd astroneer-server-kit
 bash bin/setup              # interactive wizard — handles everything
 ```
 
