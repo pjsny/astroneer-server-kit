@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "moduleResolution": "bundler",
+    "module": "esnext",
+    "target": "esnext",
+    "strict": true,
+    "esModuleInterop": true
+  },
+  "include": ["scripts/**/*"]
+}

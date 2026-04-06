@@ -2,18 +2,21 @@
   "name": "astroneer-server-kit",
   "version": "1.0.0",
   "scripts": {
-    "setup": "bun scripts/setup.ts",
-    "preflight": "bun scripts/preflight.ts",
-    "start": "bun scripts/start.ts",
-    "stop": "bun scripts/stop.ts"
+    "setup":     "bun scripts/setup.tsx",
+    "preflight": "bun scripts/preflight.tsx",
+    "start":     "bun scripts/start.ts",
+    "stop":      "bun scripts/stop.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",
-    "@clack/prompts": "^0.7.0",
-    "libsodium-wrappers": "^0.7.13"
+    "ink": "^6.0.0",
+    "ink-text-input": "^6.0.0",
+    "libsodium-wrappers": "^0.7.13",
+    "react": "^18.0.0"
   },
   "devDependencies": {
     "@types/libsodium-wrappers": "^0.7.14",
+    "@types/react": "^18.0.0",
     "bun-types": "latest"
   }
 }
