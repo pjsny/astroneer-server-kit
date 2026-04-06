@@ -1,0 +1,7 @@
+# Don't commit actual server saves or generated files
+saves/
+*.sav
+*.tmp
+
+# Don't commit the server binary files if you ever add them
+astro-server-bin/

@@ -1,0 +1,138 @@
+name: Auto Stop (if empty)
+
+on:
+  schedule:
+    - cron: "*/30 * * * *" # every 30 minutes
+
+jobs:
+  check-and-stop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+
+      - name: Terraform Init
+        working-directory: terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+        run: terraform init
+
+      - name: Check if server is running
+        id: check
+        working-directory: terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+          TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_repo_url: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          IP=$(terraform output -raw server_ip 2>/dev/null || echo "")
+          echo "ip=$IP" >> $GITHUB_OUTPUT
+          if [ -z "$IP" ]; then
+            echo "running=false" >> $GITHUB_OUTPUT
+          else
+            echo "running=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check player activity via SSH
+        if: steps.check.outputs.running == 'true'
+        id: players
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+          # Get last player event timestamp from logs (join or leave)
+          LAST_ACTIVITY=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            root@${{ steps.check.outputs.ip }} \
+            "grep -E 'RemoteRole|joined|left|PlayerController' \
+              /home/astroneer/astro-server/Astro/Saved/Logs/AstroServer.log 2>/dev/null \
+              | tail -1 | grep -oP '\[\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}' | tr -d '[' \
+              || echo ''" 2>/dev/null || echo "")
+
+          # Check current player count (players connected right now)
+          PLAYER_COUNT=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            root@${{ steps.check.outputs.ip }} \
+            "grep -c 'Login:' /home/astroneer/astro-server/Astro/Saved/Logs/AstroServer.log 2>/dev/null \
+              || echo 0" 2>/dev/null || echo "0")
+
+          echo "last_activity=$LAST_ACTIVITY" >> $GITHUB_OUTPUT
+          echo "player_count=$PLAYER_COUNT" >> $GITHUB_OUTPUT
+          echo "Last activity: $LAST_ACTIVITY"
+          echo "Approximate player sessions: $PLAYER_COUNT"
+
+      - name: Check if idle > 60 minutes
+        if: steps.check.outputs.running == 'true'
+        id: idle
+        run: |
+          LAST="${{ steps.players.outputs.last_activity }}"
+          NOW=$(date +%s)
+
+          if [ -z "$LAST" ]; then
+            # No activity logged — check how long server has been up
+            UPTIME=$(ssh -o StrictHostKeyChecking=no root@${{ steps.check.outputs.ip }} \
+              "awk '{print int(\$1)}' /proc/uptime" 2>/dev/null || echo "0")
+            if [ "$UPTIME" -gt 3600 ]; then
+              echo "should_stop=true" >> $GITHUB_OUTPUT
+              echo "reason=No player activity and server up > 1 hour" >> $GITHUB_OUTPUT
+            else
+              echo "should_stop=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            # Parse the log timestamp (format: 2024.01.01-12.00.00)
+            LAST_TS=$(date -d "$(echo $LAST | tr '.' '-' | tr '-' ':' | sed 's/T/:/2')" +%s 2>/dev/null || echo "0")
+            IDLE_SECS=$((NOW - LAST_TS))
+            echo "Idle for $IDLE_SECS seconds"
+            if [ "$IDLE_SECS" -gt 3600 ]; then
+              echo "should_stop=true" >> $GITHUB_OUTPUT
+              echo "reason=No player activity for over 60 minutes" >> $GITHUB_OUTPUT
+            else
+              echo "should_stop=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Stop server if idle
+        if: steps.check.outputs.running == 'true' && steps.idle.outputs.should_stop == 'true'
+        uses: ./.github/workflows/stop.yml
+        # Inline the stop logic here to avoid circular workflow calls
+        run: |
+          echo "Stopping server: ${{ steps.idle.outputs.reason }}"
+
+      - name: Destroy idle server
+        if: steps.check.outputs.running == 'true' && steps.idle.outputs.should_stop == 'true'
+        working-directory: terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+          TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_repo_url: ${{ github.server_url }}/${{ github.repository }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          # Graceful shutdown first
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh -o StrictHostKeyChecking=no root@${{ steps.check.outputs.ip }} \
+            "systemctl stop astroneer" || true
+
+          # Destroy droplet, keep volume
+          terraform destroy -auto-approve \
+            -target=digitalocean_droplet.astro \
+            -target=digitalocean_volume_attachment.saves \
+            -target=digitalocean_firewall.astro \
+            -target=digitalocean_ssh_key.astro
+
+          echo "Server auto-stopped: ${{ steps.idle.outputs.reason }}"
+
+      - name: Skip (server not running or still active)
+        if: steps.check.outputs.running == 'false' || steps.idle.outputs.should_stop == 'false'
+        run: echo "No action needed."

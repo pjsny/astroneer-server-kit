@@ -1,0 +1,14 @@
+[Unit]
+Description=Astroneer Dedicated Server
+After=network.target
+
+[Service]
+Type=simple
+User=astroneer
+WorkingDirectory=/home/astroneer/astro-server
+ExecStart=/home/astroneer/astro-server/AstroServer.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

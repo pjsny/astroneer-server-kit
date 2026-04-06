@@ -1,0 +1,81 @@
+name: Stop Server
+
+on:
+  workflow_dispatch:
+  workflow_call: # allows auto-stop.yml to call this
+
+jobs:
+  stop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+
+      - name: Terraform Init
+        working-directory: terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+        run: terraform init
+
+      - name: Check if server exists
+        id: check
+        working-directory: terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+          TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_repo_url: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          DROPLET=$(terraform state show digitalocean_droplet.astro 2>/dev/null && echo "exists" || echo "none")
+          echo "droplet=$DROPLET" >> $GITHUB_OUTPUT
+
+      - name: Get server IP for backup
+        if: steps.check.outputs.droplet == 'exists'
+        id: ip
+        working-directory: terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+        run: |
+          IP=$(terraform output -raw server_ip 2>/dev/null || echo "")
+          echo "ip=$IP" >> $GITHUB_OUTPUT
+
+      - name: Gracefully stop Astroneer service before destroy
+        if: steps.check.outputs.droplet == 'exists' && steps.ip.outputs.ip != ''
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh -o StrictHostKeyChecking=no root@${{ steps.ip.outputs.ip }} \
+            "systemctl stop astroneer && echo 'Server stopped cleanly'" || true
+
+      - name: Terraform Destroy (keeps volume)
+        if: steps.check.outputs.droplet == 'exists'
+        working-directory: terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+          TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_repo_url: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          # Destroy everything except the saves volume
+          terraform destroy -auto-approve \
+            -target=digitalocean_droplet.astro \
+            -target=digitalocean_volume_attachment.saves \
+            -target=digitalocean_firewall.astro \
+            -target=digitalocean_ssh_key.astro
+
+      - name: Summary
+        run: |
+          echo "## Server stopped" >> $GITHUB_STEP_SUMMARY
+          echo "World saves are safe on the persistent volume." >> $GITHUB_STEP_SUMMARY
+          echo "Run **Start Server** to bring it back up." >> $GITHUB_STEP_SUMMARY
