@@ -17,10 +17,11 @@
 2. Clone your fork and run setup:
 
 ```bash
-brew install terraform gh awscli
+brew install terraform bun
 git clone git@github.com:YOUR_USERNAME/astroneer-server-kit.git
 cd astroneer-server-kit
-bash bin/setup
+bun install
+bun run setup
 ```
 
 The wizard asks for your Hetzner credentials and handles everything else automatically.
@@ -51,9 +52,9 @@ The IP appears in the [Actions](https://github.com/pjsny/astroneer-server-kit/ac
 ## What you need
 
 - [Terraform](https://developer.hashicorp.com/terraform/install) — `brew install terraform`
-- [GitHub CLI](https://cli.github.com) — `brew install gh`
-- [AWS CLI](https://aws.amazon.com/cli/) — `brew install awscli` (used to create the Terraform state bucket)
+- [Bun](https://bun.sh) — `brew install bun`
 - A [Hetzner](https://hetzner.com/cloud) account
+- A [GitHub Personal Access Token](https://github.com/settings/tokens) with `repo` and `workflow` scopes
 
 ---
 

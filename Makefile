@@ -4,15 +4,14 @@
 -include .env
 export
 
-REPO_ROOT := $(shell pwd)
-SSH_KEY   ?= $(HOME)/.ssh/astro-server
+SSH_KEY ?= $(HOME)/.ssh/astro-server
 
 .PHONY: help setup preflight start stop ssh logs update ip
 
 help:
 	@echo ""
 	@echo "  Astroneer Server Kit"
-	@echo "  ────────────────────────────────────"
+	@echo "  ──────────────────────────────────"
 	@echo "  make setup      First-time setup wizard"
 	@echo "  make preflight  Check everything is configured"
 	@echo ""
@@ -24,28 +23,17 @@ help:
 	@echo "  make update     Update the game to the latest version"
 	@echo ""
 
-# ── Setup ──────────────────────────────────────────────────────────────────────
-
 setup:
-	@bash bin/setup
+	@bun run scripts/setup.ts
 
 preflight:
-	@bash bin/preflight
-
-# ── Server control ─────────────────────────────────────────────────────────────
+	@bun run scripts/preflight.ts
 
 start:
-	@echo "Starting server..."
-	@gh workflow run start.yml
-	@echo "Kicked off. Watch progress at: https://github.com/$$(gh repo view --json nameWithOwner -q .nameWithOwner)/actions"
-	@echo "The IP will appear in the workflow summary once it's up (~3 min)."
+	@bun run scripts/start.ts
 
 stop:
-	@echo "Stopping server..."
-	@gh workflow run stop.yml
-	@echo "Kicked off. World saves are safe."
-
-# ── Info & access ──────────────────────────────────────────────────────────────
+	@bun run scripts/stop.ts
 
 ip:
 	@cd terraform && terraform output -raw server_ip 2>/dev/null || echo "Server is not running."
@@ -60,8 +48,6 @@ logs: _require_ip
 update: _require_ip
 	@ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no root@$$(make -s ip) \
 		"bash /opt/astro-setup/update.sh"
-
-# ── Internal ───────────────────────────────────────────────────────────────────
 
 _require_ip:
 	@IP=$$(make -s ip); \

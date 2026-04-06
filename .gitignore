@@ -1,6 +1,10 @@
 # Local env — never commit credentials
 .env
 
+# Bun
+node_modules/
+bun.lockb
+
 # Server saves and generated files
 saves/
 *.sav
