@@ -1,0 +1,49 @@
+name: Server Won't Start
+description: The server starts but players can't connect, or it crashes on boot
+labels: ["server"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Let's figure out what's going on. Check these first:
+        - Did the **Start Server** GitHub Actions workflow succeed (green checkmark)?
+        - Did you wait ~3 minutes after the workflow finished before trying to connect?
+        - Are you using the IP from the workflow summary (not a cached one)?
+
+  - type: dropdown
+    id: symptom
+    attributes:
+      label: What exactly is happening?
+      options:
+        - GitHub Actions workflow fails (red X)
+        - Workflow succeeds but I can't connect in-game
+        - Server starts then immediately crashes
+        - Server works for a while then drops everyone
+        - Can't find the server in the server list
+    validations:
+      required: true
+
+  - type: textarea
+    id: actions-log
+    attributes:
+      label: GitHub Actions log
+      description: Paste the failed step output from the Actions run.
+      render: shell
+
+  - type: textarea
+    id: server-log
+    attributes:
+      label: Server log (if you can SSH in)
+      description: Output of `make logs` or `journalctl -u astroneer -n 100`
+      render: shell
+
+  - type: input
+    id: player-count
+    attributes:
+      label: How many players are trying to connect?
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform (Steam / Xbox / Game Pass)
+      description: Note — Xbox/Game Pass crossplay is not supported on self-hosted servers.

@@ -1,0 +1,57 @@
+name: Bug Report
+description: Something isn't working
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Fill out as much as you can — it helps a lot.
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where does it fail?
+      options:
+        - bin/setup (first-time setup)
+        - make start (starting the server)
+        - make stop (stopping the server)
+        - Connecting in-game
+        - Auto-shutdown
+        - Uploading a save file
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      placeholder: Describe what went wrong.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-output
+    attributes:
+      label: Error output
+      description: Paste any terminal output or GitHub Actions logs here.
+      render: shell
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Your OS
+      options:
+        - macOS
+        - Linux
+        - Windows (WSL)
+        - Windows (native)
+    validations:
+      required: true

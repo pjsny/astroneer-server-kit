@@ -1,0 +1,202 @@
+#!/bin/bash
+# Astroneer Server Kit — Interactive Setup Wizard
+# Run this once to configure everything.
+
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+info()    { echo -e "${CYAN}==>${RESET} $1"; }
+success() { echo -e "${GREEN}✓${RESET}  $1"; }
+warn()    { echo -e "${YELLOW}!${RESET}  $1"; }
+error()   { echo -e "${RED}✗${RESET}  $1"; exit 1; }
+prompt()  { echo -e "${BOLD}$1${RESET}"; }
+
+echo ""
+echo -e "${BOLD}  Astroneer Server Kit — Setup${RESET}"
+echo "  ────────────────────────────────"
+echo "  This will configure your DigitalOcean server"
+echo "  and GitHub Actions in about 5 minutes."
+echo ""
+
+# ── Check prereqs ──────────────────────────────────────────────────────────────
+
+info "Checking prerequisites..."
+
+MISSING=()
+command -v terraform &>/dev/null || MISSING+=("terraform  →  brew install terraform")
+command -v gh        &>/dev/null || MISSING+=("gh CLI     →  brew install gh")
+command -v git       &>/dev/null || MISSING+=("git        →  brew install git")
+command -v ssh-keygen &>/dev/null || MISSING+=("ssh-keygen →  included with macOS/Linux")
+
+if [ ${#MISSING[@]} -gt 0 ]; then
+  echo ""
+  echo -e "${RED}Missing required tools:${RESET}"
+  for m in "${MISSING[@]}"; do echo "  • $m"; done
+  echo ""
+  error "Install the above tools and re-run setup."
+fi
+
+success "All tools installed"
+
+# Check gh auth
+if ! gh auth status &>/dev/null; then
+  echo ""
+  warn "You need to authenticate with GitHub first."
+  echo "  Running: gh auth login"
+  echo ""
+  gh auth login || error "GitHub auth failed."
+fi
+
+success "GitHub CLI authenticated"
+
+# Confirm we're in the right repo
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo "")
+if [ -z "$REPO" ]; then
+  error "Not inside a GitHub repo. Push this repo to GitHub first."
+fi
+success "GitHub repo: $REPO"
+
+echo ""
+
+# ── DigitalOcean credentials ───────────────────────────────────────────────────
+
+info "DigitalOcean credentials"
+echo ""
+echo "  Get these from: https://cloud.digitalocean.com/account/api"
+echo ""
+
+if [ -z "$DO_TOKEN" ]; then
+  prompt "  DO Personal Access Token (read+write):"
+  read -rs DO_TOKEN
+  echo ""
+fi
+[ -z "$DO_TOKEN" ] && error "DO_TOKEN is required."
+success "DO token set"
+
+if [ -z "$DO_SPACES_KEY" ]; then
+  echo ""
+  echo "  Spaces keys are under: API → Spaces Keys"
+  echo ""
+  prompt "  Spaces Access Key:"
+  read -r DO_SPACES_KEY
+fi
+[ -z "$DO_SPACES_KEY" ] && error "DO_SPACES_KEY is required."
+
+if [ -z "$DO_SPACES_SECRET" ]; then
+  prompt "  Spaces Secret Key:"
+  read -rs DO_SPACES_SECRET
+  echo ""
+fi
+[ -z "$DO_SPACES_SECRET" ] && error "DO_SPACES_SECRET is required."
+
+success "Spaces credentials set"
+echo ""
+
+# ── SSH key ────────────────────────────────────────────────────────────────────
+
+SSH_KEY="$HOME/.ssh/astro-server"
+
+if [ -f "$SSH_KEY" ]; then
+  success "SSH key already exists at $SSH_KEY"
+else
+  info "Generating SSH key..."
+  ssh-keygen -t ed25519 -f "$SSH_KEY" -N "" -C "astroneer-server"
+  success "SSH key created at $SSH_KEY"
+fi
+echo ""
+
+# ── Bootstrap (create Spaces bucket) ──────────────────────────────────────────
+
+info "Running bootstrap (creates Terraform state bucket)..."
+cd "$REPO_ROOT/bootstrap"
+
+terraform init -input=false -reconfigure 2>&1 | tail -3
+
+# Check if bucket already exists
+if TF_VAR_do_token="$DO_TOKEN" terraform state show digitalocean_spaces_bucket.tf_state &>/dev/null 2>&1; then
+  success "State bucket already exists, skipping"
+else
+  TF_VAR_do_token="$DO_TOKEN" terraform apply -auto-approve -input=false 2>&1 | tail -5
+  success "State bucket created"
+fi
+echo ""
+
+# ── Init main Terraform ────────────────────────────────────────────────────────
+
+info "Initializing Terraform..."
+cd "$REPO_ROOT/terraform"
+
+terraform init -input=false -reconfigure \
+  -backend-config="access_key=$DO_SPACES_KEY" \
+  -backend-config="secret_key=$DO_SPACES_SECRET" 2>&1 | tail -3
+
+success "Terraform initialized"
+echo ""
+
+# ── Create saves volume ────────────────────────────────────────────────────────
+
+info "Creating persistent saves volume..."
+
+REPO_URL="https://github.com/$REPO"
+
+if TF_VAR_do_token="$DO_TOKEN" \
+   TF_VAR_ssh_public_key="$(cat "$SSH_KEY.pub")" \
+   TF_VAR_repo_url="$REPO_URL" \
+   terraform state show digitalocean_volume.saves &>/dev/null 2>&1; then
+  success "Saves volume already exists, skipping"
+else
+  TF_VAR_do_token="$DO_TOKEN" \
+  TF_VAR_ssh_public_key="$(cat "$SSH_KEY.pub")" \
+  TF_VAR_repo_url="$REPO_URL" \
+  terraform apply -auto-approve -input=false \
+    -target=digitalocean_volume.saves 2>&1 | tail -5
+  success "Saves volume created"
+fi
+echo ""
+
+# ── Set GitHub secrets ─────────────────────────────────────────────────────────
+
+info "Setting GitHub Actions secrets..."
+cd "$REPO_ROOT"
+
+gh secret set DO_TOKEN         --body "$DO_TOKEN"
+gh secret set DO_SPACES_KEY    --body "$DO_SPACES_KEY"
+gh secret set DO_SPACES_SECRET --body "$DO_SPACES_SECRET"
+gh secret set SSH_PUBLIC_KEY   --body "$(cat "$SSH_KEY.pub")"
+gh secret set SSH_PRIVATE_KEY  --body "$(cat "$SSH_KEY")"
+
+success "All GitHub secrets set"
+echo ""
+
+# ── Write .env for local make commands ────────────────────────────────────────
+
+cat > "$REPO_ROOT/.env" << EOF
+DO_TOKEN=$DO_TOKEN
+DO_SPACES_KEY=$DO_SPACES_KEY
+DO_SPACES_SECRET=$DO_SPACES_SECRET
+SSH_KEY=$SSH_KEY
+REPO_URL=$REPO_URL
+EOF
+
+success ".env written for local make commands"
+echo ""
+
+# ── Done ───────────────────────────────────────────────────────────────────────
+
+echo -e "${GREEN}${BOLD}  All done! Your server kit is ready.${RESET}"
+echo ""
+echo "  Start the server:  make start"
+echo "  Stop the server:   make stop"
+echo "  SSH in:            make ssh"
+echo "  View logs:         make logs"
+echo ""
+echo "  Or go to: https://github.com/$REPO/actions"
+echo ""

@@ -1,93 +1,76 @@
-# Astroneer Dedicated Server
+# astroneer-server-kit
 
-Up to 8 players (Steam only). Auto-shuts down when idle. World saves survive server destruction.
+> Self-hosted Astroneer dedicated server on DigitalOcean — one-click start/stop via GitHub Actions, auto-shuts down when idle, world saves always persist.
 
-**Cost:** ~$24/mo while running, ~$1/mo while stopped.
+![Start Server](https://github.com/pjsny/astroneer-server-kit/actions/workflows/start.yml/badge.svg)
+![Stop Server](https://github.com/pjsny/astroneer-server-kit/actions/workflows/stop.yml/badge.svg)
 
----
-
-## First-time setup
-
-### 1. Get your credentials
-
-| What | Where |
-|------|-------|
-| DO Personal Access Token | digitalocean.com → API → Tokens → Generate |
-| DO Spaces access key + secret | digitalocean.com → API → Spaces Keys → Generate |
-| SSH key pair | `ssh-keygen -t ed25519 -f ~/.ssh/astro-server` |
-
-### 2. Set local env vars
-
-```bash
-export DO_TOKEN=your_do_token
-export DO_SPACES_KEY=your_spaces_key
-export DO_SPACES_SECRET=your_spaces_secret
-```
-
-Add these to your `~/.zshrc` (or `~/.bashrc`) so they persist.
-
-### 3. Bootstrap (run once)
-
-Creates the Spaces bucket that stores Terraform state.
-
-```bash
-cd bootstrap
-terraform init
-TF_VAR_do_token=$DO_TOKEN terraform apply
-```
-
-### 4. Init the main Terraform config
-
-```bash
-cd terraform
-terraform init \
-  -backend-config="access_key=$DO_SPACES_KEY" \
-  -backend-config="secret_key=$DO_SPACES_SECRET"
-```
-
-### 5. Create the persistent saves volume (run once)
-
-This volume survives server destruction — your world always lives here.
-
-```bash
-TF_VAR_do_token=$DO_TOKEN \
-TF_VAR_ssh_public_key="$(cat ~/.ssh/astro-server.pub)" \
-TF_VAR_repo_url=https://github.com/YOUR_ORG/YOUR_REPO \
-terraform apply -target=digitalocean_volume.saves
-```
-
-### 6. Add GitHub secrets
-
-Go to your repo → Settings → Secrets and variables → Actions:
-
-| Secret | Value |
-|--------|-------|
-| `DO_TOKEN` | DO Personal Access Token |
-| `DO_SPACES_KEY` | Spaces access key ID |
-| `DO_SPACES_SECRET` | Spaces secret key |
-| `SSH_PUBLIC_KEY` | `cat ~/.ssh/astro-server.pub` |
-| `SSH_PRIVATE_KEY` | `cat ~/.ssh/astro-server` |
-
-That's it. You're ready to play.
+**Up to 8 players · Steam only (no Xbox/Game Pass crossplay) · ~$24/mo while running · ~$1/mo while stopped**
 
 ---
 
-## Starting the server
+## How it works
 
-**Actions → Start Server → Run workflow**
+- **Start/stop** the server with one click in GitHub Actions (or `make start` / `make stop`)
+- Server **auto-shuts down** after 60 minutes of no player activity
+- World saves live on a **persistent DigitalOcean Volume** — never lost when the server is destroyed
+- Everything is provisioned with **Terraform** — no manual droplet setup
 
-Takes ~3 minutes to boot. The IP and connect address appear in the workflow summary.
+---
 
-Optional: set session hours before auto-shutdown (default: 6).
+## Requirements
 
-## Stopping the server
+- [Terraform](https://developer.hashicorp.com/terraform/install) — `brew install terraform`
+- [GitHub CLI](https://cli.github.com) — `brew install gh`
+- A [DigitalOcean](https://digitalocean.com) account
 
-- **Manual:** Actions → Stop Server → Run workflow
-- **Auto:** Shuts down after 60 minutes of no player activity
+---
+
+## Setup (one time, ~5 minutes)
+
+```bash
+bash bin/setup
+```
+
+That's it. The wizard will:
+1. Check your tools are installed
+2. Ask for your DigitalOcean credentials
+3. Generate an SSH key
+4. Create the Terraform state bucket
+5. Create the persistent saves volume
+6. Set all GitHub Actions secrets automatically
+
+Not sure if everything is configured? Run `make preflight` at any time.
+
+---
+
+## Starting and stopping
+
+**Via GitHub Actions (anyone can do this):**
+
+Actions → Start Server → Run workflow
+
+The workflow summary shows your server IP and connect address. Takes ~3 minutes to boot.
+
+**Via terminal:**
+
+```bash
+make start    # spin up the server
+make stop     # shut it down
+make ip       # show current IP
+make ssh      # SSH into the running server
+make logs     # tail the server logs
+make update   # update game to latest version
+```
+
+---
 
 ## Connecting in-game
 
-Astroneer → Multiplayer → Servers → Add Server → enter `IP:8777`
+Astroneer → Multiplayer → Servers → Add Server
+
+- **IP:** shown in the Start Server workflow summary
+- **Port:** `8777`
 
 ---
 
@@ -98,20 +81,29 @@ Find your save on Windows:
 C:\Users\YOURNAME\AppData\Local\Astro\Saved\SaveGames\
 ```
 
-Upload it to the server:
+Upload it:
 ```bash
 bash upload-save.sh <server-ip> /path/to/SAVE_1.savegame
 ```
 
+The script uploads the file, sets permissions, and activates it — no manual config needed.
+
 ---
 
-## Server commands (SSH in as root)
+## Setting server name and owner
 
+After your first boot, edit on the server:
 ```bash
-systemctl status astroneer        # check status
-systemctl restart astroneer       # restart
-journalctl -u astroneer -f        # live logs
-bash /opt/astro-setup/update.sh   # update game version
+make ssh
+nano /mnt/saves/AstroServerSettings.ini
 ```
 
-Server config lives at `/mnt/saves/AstroServerSettings.ini` and persists across sessions.
+Set `OwnerName=` to your Steam display name. This file persists across all future sessions.
+
+---
+
+## Troubleshooting
+
+Run `make preflight` to check your configuration.
+
+Check the [Issues](https://github.com/pjsny/astroneer-server-kit/issues) tab — use the issue templates to report bugs or get help with connection problems.

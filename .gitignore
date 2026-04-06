@@ -1,7 +1,8 @@
-# Don't commit actual server saves or generated files
+# Local env — never commit credentials
+.env
+
+# Server saves and generated files
 saves/
 *.sav
 *.tmp
-
-# Don't commit the server binary files if you ever add them
 astro-server-bin/
