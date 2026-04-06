@@ -2,7 +2,7 @@ name: Stop Server
 
 on:
   workflow_dispatch:
-  workflow_call: # allows auto-stop.yml to call this
+  workflow_call:
 
 jobs:
   stop:
@@ -18,36 +18,36 @@ jobs:
       - name: Terraform Init
         working-directory: terraform
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
         run: terraform init
 
       - name: Check if server exists
         id: check
         working-directory: terraform
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
-          TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
           TF_VAR_repo_url: ${{ github.server_url }}/${{ github.repository }}
         run: |
-          DROPLET=$(terraform state show digitalocean_droplet.astro 2>/dev/null && echo "exists" || echo "none")
-          echo "droplet=$DROPLET" >> $GITHUB_OUTPUT
+          RESULT=$(terraform state show hcloud_server.astro 2>/dev/null && echo "exists" || echo "none")
+          echo "server=$RESULT" >> $GITHUB_OUTPUT
 
-      - name: Get server IP for backup
-        if: steps.check.outputs.droplet == 'exists'
+      - name: Get server IP
+        if: steps.check.outputs.server == 'exists'
         id: ip
         working-directory: terraform
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
         run: |
           IP=$(terraform output -raw server_ip 2>/dev/null || echo "")
           echo "ip=$IP" >> $GITHUB_OUTPUT
 
-      - name: Gracefully stop Astroneer service before destroy
-        if: steps.check.outputs.droplet == 'exists' && steps.ip.outputs.ip != ''
+      - name: Gracefully stop Astroneer before destroy
+        if: steps.check.outputs.server == 'exists' && steps.ip.outputs.ip != ''
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
@@ -55,24 +55,23 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh -o StrictHostKeyChecking=no root@${{ steps.ip.outputs.ip }} \
-            "systemctl stop astroneer && echo 'Server stopped cleanly'" || true
+            "systemctl stop astroneer" || true
 
-      - name: Terraform Destroy (keeps volume)
-        if: steps.check.outputs.droplet == 'exists'
+      - name: Terraform Destroy (keeps saves volume)
+        if: steps.check.outputs.server == 'exists'
         working-directory: terraform
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
-          TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
           TF_VAR_repo_url: ${{ github.server_url }}/${{ github.repository }}
         run: |
-          # Destroy everything except the saves volume
           terraform destroy -auto-approve \
-            -target=digitalocean_droplet.astro \
-            -target=digitalocean_volume_attachment.saves \
-            -target=digitalocean_firewall.astro \
-            -target=digitalocean_ssh_key.astro
+            -target=hcloud_server.astro \
+            -target=hcloud_volume_attachment.saves \
+            -target=hcloud_firewall.astro \
+            -target=hcloud_ssh_key.astro
 
       - name: Summary
         run: |

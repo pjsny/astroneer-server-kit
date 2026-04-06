@@ -12,6 +12,8 @@ BOLD='\033[1m'
 RESET='\033[0m'
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+HETZNER_S3_ENDPOINT="https://fsn1.your-objectstorage.com"
+STATE_BUCKET="astro-server-tf-state"
 
 info()    { echo -e "${CYAN}==>${RESET} $1"; }
 success() { echo -e "${GREEN}✓${RESET}  $1"; }
@@ -22,7 +24,7 @@ prompt()  { echo -e "${BOLD}$1${RESET}"; }
 echo ""
 echo -e "${BOLD}  Astroneer Server Kit — Setup${RESET}"
 echo "  ────────────────────────────────"
-echo "  This will configure your DigitalOcean server"
+echo "  This will configure your Hetzner server"
 echo "  and GitHub Actions in about 5 minutes."
 echo ""
 
@@ -33,7 +35,7 @@ info "Checking prerequisites..."
 MISSING=()
 command -v terraform &>/dev/null || MISSING+=("terraform  →  brew install terraform")
 command -v gh        &>/dev/null || MISSING+=("gh CLI     →  brew install gh")
-command -v git       &>/dev/null || MISSING+=("git        →  brew install git")
+command -v aws       &>/dev/null || MISSING+=("aws CLI    →  brew install awscli")
 command -v ssh-keygen &>/dev/null || MISSING+=("ssh-keygen →  included with macOS/Linux")
 
 if [ ${#MISSING[@]} -gt 0 ]; then
@@ -41,7 +43,7 @@ if [ ${#MISSING[@]} -gt 0 ]; then
   echo -e "${RED}Missing required tools:${RESET}"
   for m in "${MISSING[@]}"; do echo "  • $m"; done
   echo ""
-  error "Install the above tools and re-run setup."
+  error "Install the above and re-run setup."
 fi
 
 success "All tools installed"
@@ -50,54 +52,47 @@ success "All tools installed"
 if ! gh auth status &>/dev/null; then
   echo ""
   warn "You need to authenticate with GitHub first."
-  echo "  Running: gh auth login"
-  echo ""
   gh auth login || error "GitHub auth failed."
 fi
-
 success "GitHub CLI authenticated"
 
-# Confirm we're in the right repo
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo "")
-if [ -z "$REPO" ]; then
-  error "Not inside a GitHub repo. Push this repo to GitHub first."
-fi
+[ -z "$REPO" ] && error "Not inside a GitHub repo. Push this repo to GitHub first."
 success "GitHub repo: $REPO"
 
 echo ""
 
-# ── DigitalOcean credentials ───────────────────────────────────────────────────
+# ── Hetzner credentials ────────────────────────────────────────────────────────
 
-info "DigitalOcean credentials"
+info "Hetzner credentials"
 echo ""
-echo "  Get these from: https://cloud.digitalocean.com/account/api"
+echo "  Cloud API token: https://console.hetzner.cloud → project → Security → API Tokens"
+echo "  Object Storage keys: https://console.hetzner.cloud → project → Security → S3 Credentials"
 echo ""
 
-if [ -z "$DO_TOKEN" ]; then
-  prompt "  DO Personal Access Token (read+write):"
-  read -rs DO_TOKEN
+if [ -z "$HCLOUD_TOKEN" ]; then
+  prompt "  Hetzner Cloud API Token:"
+  read -rs HCLOUD_TOKEN
   echo ""
 fi
-[ -z "$DO_TOKEN" ] && error "DO_TOKEN is required."
-success "DO token set"
+[ -z "$HCLOUD_TOKEN" ] && error "HCLOUD_TOKEN is required."
+success "Hetzner API token set"
 
-if [ -z "$DO_SPACES_KEY" ]; then
+if [ -z "$HETZNER_S3_ACCESS_KEY" ]; then
   echo ""
-  echo "  Spaces keys are under: API → Spaces Keys"
-  echo ""
-  prompt "  Spaces Access Key:"
-  read -r DO_SPACES_KEY
+  prompt "  Hetzner Object Storage Access Key:"
+  read -r HETZNER_S3_ACCESS_KEY
 fi
-[ -z "$DO_SPACES_KEY" ] && error "DO_SPACES_KEY is required."
+[ -z "$HETZNER_S3_ACCESS_KEY" ] && error "HETZNER_S3_ACCESS_KEY is required."
 
-if [ -z "$DO_SPACES_SECRET" ]; then
-  prompt "  Spaces Secret Key:"
-  read -rs DO_SPACES_SECRET
+if [ -z "$HETZNER_S3_SECRET_KEY" ]; then
+  prompt "  Hetzner Object Storage Secret Key:"
+  read -rs HETZNER_S3_SECRET_KEY
   echo ""
 fi
-[ -z "$DO_SPACES_SECRET" ] && error "DO_SPACES_SECRET is required."
+[ -z "$HETZNER_S3_SECRET_KEY" ] && error "HETZNER_S3_SECRET_KEY is required."
 
-success "Spaces credentials set"
+success "Object Storage credentials set"
 echo ""
 
 # ── SSH key ────────────────────────────────────────────────────────────────────
@@ -113,30 +108,38 @@ else
 fi
 echo ""
 
-# ── Bootstrap (create Spaces bucket) ──────────────────────────────────────────
+# ── Create Object Storage bucket ───────────────────────────────────────────────
 
-info "Running bootstrap (creates Terraform state bucket)..."
-cd "$REPO_ROOT/bootstrap"
+info "Creating Terraform state bucket..."
 
-terraform init -input=false -reconfigure 2>&1 | tail -3
+BUCKET_EXISTS=$(AWS_ACCESS_KEY_ID="$HETZNER_S3_ACCESS_KEY" \
+  AWS_SECRET_ACCESS_KEY="$HETZNER_S3_SECRET_KEY" \
+  aws s3api head-bucket \
+    --bucket "$STATE_BUCKET" \
+    --endpoint-url "$HETZNER_S3_ENDPOINT" \
+    --region fsn1 2>&1 || echo "not-found")
 
-# Check if bucket already exists
-if TF_VAR_do_token="$DO_TOKEN" terraform state show digitalocean_spaces_bucket.tf_state &>/dev/null 2>&1; then
-  success "State bucket already exists, skipping"
-else
-  TF_VAR_do_token="$DO_TOKEN" terraform apply -auto-approve -input=false 2>&1 | tail -5
+if echo "$BUCKET_EXISTS" | grep -q "not-found\|NoSuchBucket\|404"; then
+  AWS_ACCESS_KEY_ID="$HETZNER_S3_ACCESS_KEY" \
+  AWS_SECRET_ACCESS_KEY="$HETZNER_S3_SECRET_KEY" \
+  aws s3api create-bucket \
+    --bucket "$STATE_BUCKET" \
+    --endpoint-url "$HETZNER_S3_ENDPOINT" \
+    --region fsn1 2>&1 | tail -2
   success "State bucket created"
+else
+  success "State bucket already exists"
 fi
 echo ""
 
-# ── Init main Terraform ────────────────────────────────────────────────────────
+# ── Init Terraform ─────────────────────────────────────────────────────────────
 
 info "Initializing Terraform..."
 cd "$REPO_ROOT/terraform"
 
 terraform init -input=false -reconfigure \
-  -backend-config="access_key=$DO_SPACES_KEY" \
-  -backend-config="secret_key=$DO_SPACES_SECRET" 2>&1 | tail -3
+  -backend-config="access_key=$HETZNER_S3_ACCESS_KEY" \
+  -backend-config="secret_key=$HETZNER_S3_SECRET_KEY" 2>&1 | tail -3
 
 success "Terraform initialized"
 echo ""
@@ -147,17 +150,19 @@ info "Creating persistent saves volume..."
 
 REPO_URL="https://github.com/$REPO"
 
-if TF_VAR_do_token="$DO_TOKEN" \
-   TF_VAR_ssh_public_key="$(cat "$SSH_KEY.pub")" \
-   TF_VAR_repo_url="$REPO_URL" \
-   terraform state show digitalocean_volume.saves &>/dev/null 2>&1; then
-  success "Saves volume already exists, skipping"
+VOLUME_EXISTS=$(TF_VAR_hcloud_token="$HCLOUD_TOKEN" \
+  TF_VAR_ssh_public_key="$(cat "$SSH_KEY.pub")" \
+  TF_VAR_repo_url="$REPO_URL" \
+  terraform state show hcloud_volume.saves 2>/dev/null && echo "exists" || echo "missing")
+
+if [ "$VOLUME_EXISTS" = "exists" ]; then
+  success "Saves volume already exists"
 else
-  TF_VAR_do_token="$DO_TOKEN" \
+  TF_VAR_hcloud_token="$HCLOUD_TOKEN" \
   TF_VAR_ssh_public_key="$(cat "$SSH_KEY.pub")" \
   TF_VAR_repo_url="$REPO_URL" \
   terraform apply -auto-approve -input=false \
-    -target=digitalocean_volume.saves 2>&1 | tail -5
+    -target=hcloud_volume.saves 2>&1 | tail -5
   success "Saves volume created"
 fi
 echo ""
@@ -167,21 +172,21 @@ echo ""
 info "Setting GitHub Actions secrets..."
 cd "$REPO_ROOT"
 
-gh secret set DO_TOKEN         --body "$DO_TOKEN"
-gh secret set DO_SPACES_KEY    --body "$DO_SPACES_KEY"
-gh secret set DO_SPACES_SECRET --body "$DO_SPACES_SECRET"
-gh secret set SSH_PUBLIC_KEY   --body "$(cat "$SSH_KEY.pub")"
-gh secret set SSH_PRIVATE_KEY  --body "$(cat "$SSH_KEY")"
+gh secret set HCLOUD_TOKEN           --body "$HCLOUD_TOKEN"
+gh secret set HETZNER_S3_ACCESS_KEY  --body "$HETZNER_S3_ACCESS_KEY"
+gh secret set HETZNER_S3_SECRET_KEY  --body "$HETZNER_S3_SECRET_KEY"
+gh secret set SSH_PUBLIC_KEY         --body "$(cat "$SSH_KEY.pub")"
+gh secret set SSH_PRIVATE_KEY        --body "$(cat "$SSH_KEY")"
 
 success "All GitHub secrets set"
 echo ""
 
-# ── Write .env for local make commands ────────────────────────────────────────
+# ── Write .env ─────────────────────────────────────────────────────────────────
 
 cat > "$REPO_ROOT/.env" << EOF
-DO_TOKEN=$DO_TOKEN
-DO_SPACES_KEY=$DO_SPACES_KEY
-DO_SPACES_SECRET=$DO_SPACES_SECRET
+HCLOUD_TOKEN=$HCLOUD_TOKEN
+HETZNER_S3_ACCESS_KEY=$HETZNER_S3_ACCESS_KEY
+HETZNER_S3_SECRET_KEY=$HETZNER_S3_SECRET_KEY
 SSH_KEY=$SSH_KEY
 REPO_URL=$REPO_URL
 EOF
@@ -193,10 +198,10 @@ echo ""
 
 echo -e "${GREEN}${BOLD}  All done! Your server kit is ready.${RESET}"
 echo ""
-echo "  Start the server:  make start"
-echo "  Stop the server:   make stop"
-echo "  SSH in:            make ssh"
-echo "  View logs:         make logs"
+echo "  make start   spin up the server"
+echo "  make stop    shut it down"
+echo "  make ssh     SSH into the running server"
+echo "  make logs    tail the server logs"
 echo ""
-echo "  Or go to: https://github.com/$REPO/actions"
+echo "  Or trigger from GitHub: https://github.com/$REPO/actions"
 echo ""

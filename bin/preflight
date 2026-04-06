@@ -21,7 +21,6 @@ echo -e "${BOLD}  Astroneer Server Kit — Preflight Check${RESET}"
 echo "  ─────────────────────────────────────────"
 echo ""
 
-# Load .env if present
 [ -f "$REPO_ROOT/.env" ] && source "$REPO_ROOT/.env"
 
 # ── Tools ──────────────────────────────────────────────────────────────────────
@@ -29,6 +28,7 @@ echo ""
 echo -e "${BOLD}  Tools${RESET}"
 command -v terraform &>/dev/null && ok "terraform" || fail "terraform not installed  →  brew install terraform"
 command -v gh        &>/dev/null && ok "gh CLI"    || fail "gh CLI not installed    →  brew install gh"
+command -v aws       &>/dev/null && ok "aws CLI"   || fail "aws CLI not installed   →  brew install awscli"
 command -v ssh       &>/dev/null && ok "ssh"       || fail "ssh not found"
 echo ""
 
@@ -37,13 +37,13 @@ echo ""
 echo -e "${BOLD}  Auth${RESET}"
 gh auth status &>/dev/null && ok "GitHub CLI authenticated" || fail "Not logged into GitHub  →  gh auth login"
 
-if [ -n "$DO_TOKEN" ]; then
+if [ -n "$HCLOUD_TOKEN" ]; then
   STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-    -H "Authorization: Bearer $DO_TOKEN" \
-    "https://api.digitalocean.com/v2/account")
-  [ "$STATUS" = "200" ] && ok "DO token valid" || fail "DO token invalid or expired"
+    -H "Authorization: Bearer $HCLOUD_TOKEN" \
+    "https://api.hetzner.cloud/v1/servers")
+  [ "$STATUS" = "200" ] && ok "Hetzner API token valid" || fail "Hetzner token invalid or expired"
 else
-  fail "DO_TOKEN not set  →  run: bash bin/setup"
+  fail "HCLOUD_TOKEN not set  →  run: bash bin/setup"
 fi
 echo ""
 
@@ -58,10 +58,10 @@ else
 fi
 echo ""
 
-# ── GitHub secrets ─────────────────────────────────────────────────────────────
+# ── GitHub Secrets ─────────────────────────────────────────────────────────────
 
 echo -e "${BOLD}  GitHub Secrets${RESET}"
-REQUIRED_SECRETS=("DO_TOKEN" "DO_SPACES_KEY" "DO_SPACES_SECRET" "SSH_PUBLIC_KEY" "SSH_PRIVATE_KEY")
+REQUIRED_SECRETS=("HCLOUD_TOKEN" "HETZNER_S3_ACCESS_KEY" "HETZNER_S3_SECRET_KEY" "SSH_PUBLIC_KEY" "SSH_PRIVATE_KEY")
 for secret in "${REQUIRED_SECRETS[@]}"; do
   if gh secret list 2>/dev/null | grep -q "^$secret"; then
     ok "$secret"
@@ -71,35 +71,34 @@ for secret in "${REQUIRED_SECRETS[@]}"; do
 done
 echo ""
 
-# ── Terraform state ────────────────────────────────────────────────────────────
+# ── Infrastructure ─────────────────────────────────────────────────────────────
 
 echo -e "${BOLD}  Infrastructure${RESET}"
 
 # Check state bucket
-BUCKET_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-  -H "Authorization: AWS ${DO_SPACES_KEY}:${DO_SPACES_SECRET}" \
-  "https://nyc3.digitaloceanspaces.com/astro-server-tf-state" 2>/dev/null || echo "000")
-
-if [ "$BUCKET_STATUS" = "200" ] || [ "$BUCKET_STATUS" = "403" ]; then
-  ok "Terraform state bucket exists"
-else
-  fail "State bucket not found  →  run: bash bin/setup"
+if [ -n "$HETZNER_S3_ACCESS_KEY" ] && [ -n "$HETZNER_S3_SECRET_KEY" ]; then
+  BUCKET=$(AWS_ACCESS_KEY_ID="$HETZNER_S3_ACCESS_KEY" \
+    AWS_SECRET_ACCESS_KEY="$HETZNER_S3_SECRET_KEY" \
+    aws s3api head-bucket \
+      --bucket astro-server-tf-state \
+      --endpoint-url https://fsn1.your-objectstorage.com \
+      --region fsn1 2>&1 && echo "ok" || echo "missing")
+  [ "$BUCKET" = "ok" ] && ok "Terraform state bucket exists" || fail "State bucket missing  →  run: bash bin/setup"
 fi
 
-# Check saves volume via DO API
-if [ -n "$DO_TOKEN" ]; then
+# Check saves volume and server via Hetzner API
+if [ -n "$HCLOUD_TOKEN" ]; then
   VOLUME=$(curl -s \
-    -H "Authorization: Bearer $DO_TOKEN" \
-    "https://api.digitalocean.com/v2/volumes?name=astro-saves" \
+    -H "Authorization: Bearer $HCLOUD_TOKEN" \
+    "https://api.hetzner.cloud/v1/volumes?name=astro-saves" \
     | grep -o '"astro-saves"' || echo "")
   [ -n "$VOLUME" ] && ok "Saves volume exists" || fail "Saves volume not found  →  run: bash bin/setup"
 
-  # Check if server is currently running
-  DROPLET=$(curl -s \
-    -H "Authorization: Bearer $DO_TOKEN" \
-    "https://api.digitalocean.com/v2/droplets?name=astro-server" \
+  SERVER=$(curl -s \
+    -H "Authorization: Bearer $HCLOUD_TOKEN" \
+    "https://api.hetzner.cloud/v1/servers?name=astro-server" \
     | grep -o '"astro-server"' || echo "")
-  if [ -n "$DROPLET" ]; then
+  if [ -n "$SERVER" ]; then
     warn "Server is currently running"
   else
     ok "Server is stopped (expected when idle)"
