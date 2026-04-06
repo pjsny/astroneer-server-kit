@@ -1,11 +1,11 @@
 import type { Provider } from './types.js';
+import { digitalocean } from './digitalocean.js';
 import { hetzner } from './hetzner.js';
 
-// Registry of all available providers.
-// Add new providers here as more are supported.
-export const providers: Provider[] = [hetzner];
+// Registry of all supported providers.
+// Disabled providers are shown in the UI but cannot be selected.
+export const providers: Provider[] = [digitalocean, hetzner];
 
-// The default provider used for new setups.
-export const defaultProvider = hetzner;
+export const defaultProvider = digitalocean;
 
 export type { Provider };

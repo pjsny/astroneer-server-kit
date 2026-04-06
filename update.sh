@@ -7,8 +7,8 @@ systemctl stop astroneer
 
 echo "==> Updating server files..."
 sudo -u astroneer steamcmd \
-  +login anonymous \
   +force_install_dir /home/astroneer/astro-server \
+  +login anonymous \
   +app_update 728470 validate \
   +quit
 

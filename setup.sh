@@ -39,8 +39,8 @@ fi
 
 echo "==> Downloading Astroneer Dedicated Server via SteamCMD..."
 sudo -u astroneer steamcmd \
-  +login anonymous \
   +force_install_dir "$SERVER_DIR" \
+  +login anonymous \
   +app_update 728470 validate \
   +quit
 

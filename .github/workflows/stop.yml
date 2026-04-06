@@ -18,21 +18,21 @@ jobs:
       - name: Terraform Init
         working-directory: terraform
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
         run: terraform init
 
       - name: Check if server exists
         id: check
         working-directory: terraform
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
-          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+          TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
           TF_VAR_repo_url: ${{ github.server_url }}/${{ github.repository }}
         run: |
-          RESULT=$(terraform state show hcloud_server.astro 2>/dev/null && echo "exists" || echo "none")
+          RESULT=$(terraform state show digitalocean_droplet.astro 2>/dev/null && echo "exists" || echo "none")
           echo "server=$RESULT" >> $GITHUB_OUTPUT
 
       - name: Get server IP
@@ -40,8 +40,8 @@ jobs:
         id: ip
         working-directory: terraform
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
         run: |
           IP=$(terraform output -raw server_ip 2>/dev/null || echo "")
           echo "ip=$IP" >> $GITHUB_OUTPUT
@@ -61,17 +61,17 @@ jobs:
         if: steps.check.outputs.server == 'exists'
         working-directory: terraform
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
-          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+          TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
           TF_VAR_repo_url: ${{ github.server_url }}/${{ github.repository }}
         run: |
           terraform destroy -auto-approve \
-            -target=hcloud_server.astro \
-            -target=hcloud_volume_attachment.saves \
-            -target=hcloud_firewall.astro \
-            -target=hcloud_ssh_key.astro
+            -target=digitalocean_droplet.astro \
+            -target=digitalocean_volume_attachment.saves \
+            -target=digitalocean_firewall.astro \
+            -target=digitalocean_ssh_key.astro
 
       - name: Summary
         run: |

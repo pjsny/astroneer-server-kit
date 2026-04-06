@@ -1,4 +1,4 @@
-import _sodium from "libsodium-wrappers";
+import sodium from "tweetsodium";
 
 const BASE = "https://api.github.com";
 
@@ -17,9 +17,6 @@ export async function setSecret(
   name: string,
   value: string
 ) {
-  await _sodium.ready;
-  const sodium = _sodium;
-
   // Get repo public key for secret encryption
   const keyRes = await fetch(
     `${BASE}/repos/${repo}/actions/secrets/public-key`,
@@ -28,16 +25,16 @@ export async function setSecret(
   if (!keyRes.ok) throw new Error(`Failed to get repo public key: ${keyRes.status}`);
   const { key, key_id } = await keyRes.json() as { key: string; key_id: string };
 
-  // Encrypt with libsodium
-  const keyBytes = sodium.from_base64(key, sodium.base64_variants.ORIGINAL);
-  const valueBytes = sodium.from_string(value);
-  const encrypted = sodium.crypto_box_seal(valueBytes, keyBytes);
-  const encryptedBase64 = sodium.to_base64(encrypted, sodium.base64_variants.ORIGINAL);
+  // Encrypt with tweetsodium (pure JS crypto_box_seal — works in Bun)
+  const keyBytes     = Buffer.from(key, "base64");
+  const valueBytes   = Buffer.from(value);
+  const encrypted    = sodium.seal(valueBytes, keyBytes);
+  const encryptedB64 = Buffer.from(encrypted).toString("base64");
 
   const res = await fetch(`${BASE}/repos/${repo}/actions/secrets/${name}`, {
     method: "PUT",
     headers: headers(token),
-    body: JSON.stringify({ encrypted_value: encryptedBase64, key_id }),
+    body: JSON.stringify({ encrypted_value: encryptedB64, key_id }),
   });
   if (!res.ok) throw new Error(`Failed to set secret ${name}: ${res.status}`);
 }

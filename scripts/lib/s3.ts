@@ -4,26 +4,29 @@ import {
   HeadBucketCommand,
 } from "@aws-sdk/client-s3";
 
-const ENDPOINT = "https://fsn1.your-objectstorage.com";
-const BUCKET = "astro-server-tf-state";
-
-export function makeS3Client(accessKey: string, secretKey: string) {
+export function makeS3Client(accessKey: string, secretKey: string, endpoint: string) {
+  // Extract region from endpoint hostname (e.g. "nyc3" from "nyc3.digitaloceanspaces.com")
+  const region = new URL(endpoint).hostname.split(".")[0];
   return new S3Client({
-    endpoint: ENDPOINT,
-    region: "fsn1",
+    endpoint,
+    region,
     credentials: { accessKeyId: accessKey, secretAccessKey: secretKey },
     forcePathStyle: true,
   });
 }
 
-export async function ensureBucket(accessKey: string, secretKey: string) {
-  const s3 = makeS3Client(accessKey, secretKey);
-
+export async function ensureBucket(
+  accessKey: string,
+  secretKey: string,
+  endpoint: string,
+  bucket: string,
+) {
+  const s3 = makeS3Client(accessKey, secretKey, endpoint);
   try {
-    await s3.send(new HeadBucketCommand({ Bucket: BUCKET }));
+    await s3.send(new HeadBucketCommand({ Bucket: bucket }));
     return false; // already existed
   } catch {
-    await s3.send(new CreateBucketCommand({ Bucket: BUCKET }));
+    await s3.send(new CreateBucketCommand({ Bucket: bucket }));
     return true; // created
   }
 }
