@@ -9,6 +9,29 @@
 
 ---
 
+## Quick start
+
+**First time only (~5 min):**
+
+```bash
+brew install terraform gh   # install required tools
+bash bin/setup              # interactive wizard — handles everything
+```
+
+**Every session:**
+
+```bash
+make start   # spin up the server (~3 min to boot)
+# play — server auto-stops after 60 min idle
+make stop    # or stop it manually when done
+```
+
+**Connect in-game:** Multiplayer → Servers → Add Server → `YOUR_IP:8777`
+
+The IP appears in the [Actions](https://github.com/pjsny/astroneer-server-kit/actions) tab after `make start` finishes.
+
+---
+
 ## How it works
 
 - **Start/stop** the server with one click in GitHub Actions (or `make start` / `make stop`)
