@@ -6,17 +6,17 @@ body:
     attributes:
       value: |
         Let's figure out what's going on. Check these first:
-        - Did the **Start Server** GitHub Actions workflow succeed (green checkmark)?
-        - Did you wait ~3 minutes after the workflow finished before trying to connect?
-        - Are you using the IP from the workflow summary (not a cached one)?
+        - Did `make start` / `terraform apply` finish without errors?
+        - Did you wait ~15–25+ minutes on first boot (Wine + SteamCMD) before trying to connect?
+        - Are you using the current IP from `make ip` (not a cached one)?
 
   - type: dropdown
     id: symptom
     attributes:
       label: What exactly is happening?
       options:
-        - GitHub Actions workflow fails (red X)
-        - Workflow succeeds but I can't connect in-game
+        - `make start` / Terraform fails (paste output below)
+        - Start succeeds but I can't connect in-game
         - Server starts then immediately crashes
         - Server works for a while then drops everyone
         - Can't find the server in the server list
@@ -24,10 +24,10 @@ body:
       required: true
 
   - type: textarea
-    id: actions-log
+    id: terraform-log
     attributes:
-      label: GitHub Actions log
-      description: Paste the failed step output from the Actions run.
+      label: Terraform / local command output
+      description: Output from `make start` or `terraform apply` if provisioning failed.
       render: shell
 
   - type: textarea

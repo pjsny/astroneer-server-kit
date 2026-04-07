@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { render, Box, Text, useApp } from 'ink';
 import { useFrame } from './ui/useFrame.js';
 import { loadEnv } from './lib/env.js';
-import { validateToken } from './lib/github.js';
 import { makeS3Client } from './lib/s3.js';
 import { HeadBucketCommand } from '@aws-sdk/client-s3';
 import * as tf from './lib/terraform.js';
@@ -79,18 +78,19 @@ const Preflight: React.FC = () => {
     { label: 'ssh',       status: 'pending' },
   ]);
   const [creds,  setCreds]  = useState<Check[]>([
-    { label: 'GitHub token',              status: 'pending' },
-    { label: `${provider.name} API token`, status: 'pending' },
+    { label: `${provider.credentials[0]?.label ?? provider.name} (and related keys)`, status: 'pending' },
   ]);
   const [infra,  setInfra]  = useState<Check[]>([
     { label: 'Terraform state bucket', status: 'pending' },
     { label: 'SSH key',                status: 'pending' },
     { label: 'Saves volume',           status: 'pending' },
-    { label: 'Server status',          status: 'pending' },
+    { label: 'Compute instance (Terraform)', status: 'pending' },
   ]);
   const [phase,  setPhase]  = useState<Phase>('running');
   const [passed, setPassed] = useState(0);
   const [failed, setFailed] = useState(0);
+  /** When true, `server_ip` exists in Terraform state — compute is already provisioned (`make start` was run). */
+  const [computeInState, setComputeInState] = useState(false);
 
   const update = <T extends Check>(
     setter: React.Dispatch<React.SetStateAction<T[]>>,
@@ -99,97 +99,123 @@ const Preflight: React.FC = () => {
   ) => setter(prev => prev.map((c, idx) => idx === i ? { ...c, ...patch } : c) as T[]);
 
   useEffect(() => {
-    (async () => {
-      // ── Tools ──────────────────────────────────────────────────────────────
-      update(setTools, 0, { status: 'checking' });
-      if (tf.isInstalled()) {
-        update(setTools, 0, { status: 'pass' });
-      } else {
-        update(setTools, 0, { status: 'fail', detail: 'brew install terraform' });
-      }
+    let cancelled = false;
+    /** Run after commit: avoids React 19 "Should not already be working" when sync work + setState overlap Ink + reconciler. */
+    const timer = setTimeout(() => {
+      void (async () => {
+        const tally: CheckStatus[] = [];
 
-      update(setTools, 1, { status: 'checking' });
-      const sshOk = Bun.spawnSync(['ssh', '-V']).exitCode === 0;
-      update(setTools, 1, { status: sshOk ? 'pass' : 'fail', detail: sshOk ? undefined : 'ssh not found' });
-
-      // ── Credentials ────────────────────────────────────────────────────────
-      update(setCreds, 0, { status: 'checking' });
-      if (env.GITHUB_TOKEN) {
-        const user = await validateToken(env.GITHUB_TOKEN);
-        update(setCreds, 0, {
-          status: user ? 'pass' : 'fail',
-          detail: user ? `logged in as ${user}` : 'token invalid or missing scopes — run: bun run setup',
-        });
-      } else {
-        update(setCreds, 0, { status: 'fail', detail: 'not set — run: bun run setup' });
-      }
-
-      // Validate provider-specific API token (first credential)
-      update(setCreds, 1, { status: 'checking' });
-      const envRecord = env as Record<string, string>;
-      const hasProviderCreds = provider.credentials.every(c => envRecord[c.envKey]);
-      if (hasProviderCreds) {
-        const result = await provider.validateCredentials(envRecord);
-        update(setCreds, 1, {
-          status: result.ok ? 'pass' : 'fail',
-          detail: result.ok ? undefined : `${result.error} — run: bun run setup`,
-        });
-      } else {
-        update(setCreds, 1, { status: 'fail', detail: 'not set — run: bun run setup' });
-      }
-
-      // ── Infrastructure ─────────────────────────────────────────────────────
-      update(setInfra, 0, { status: 'checking' });
-      const s3Key    = envRecord[provider.s3KeyEnvVar];
-      const s3Secret = envRecord[provider.s3SecretEnvVar];
-      if (s3Key && s3Secret) {
-        try {
-          const s3 = makeS3Client(s3Key, s3Secret, provider.s3Endpoint);
-          await s3.send(new HeadBucketCommand({ Bucket: provider.s3Bucket }));
-          update(setInfra, 0, { status: 'pass' });
-        } catch {
-          update(setInfra, 0, { status: 'fail', detail: 'bucket not found — run: bun run setup' });
+        // ── Tools ──────────────────────────────────────────────────────────────
+        update(setTools, 0, { status: 'checking' });
+        if (tf.isInstalled()) {
+          update(setTools, 0, { status: 'pass' });
+          tally.push('pass');
+        } else {
+          update(setTools, 0, { status: 'fail', detail: 'brew install terraform' });
+          tally.push('fail');
         }
-      } else {
-        update(setInfra, 0, { status: 'fail', detail: 'S3 credentials not set — run: bun run setup' });
-      }
 
-      update(setInfra, 1, { status: 'checking' });
-      const SSH_KEY = envRecord.SSH_KEY ?? `${process.env.HOME}/.ssh/astro-server`;
-      const sshExists = fs.existsSync(SSH_KEY) && fs.existsSync(`${SSH_KEY}.pub`);
-      update(setInfra, 1, {
-        status: sshExists ? 'pass' : 'fail',
-        detail: sshExists ? SSH_KEY : `key not found at ${SSH_KEY} — run: bun run setup`,
-      });
+        update(setTools, 1, { status: 'checking' });
+        const sshOk = Bun.spawnSync(['ssh', '-V']).exitCode === 0;
+        update(setTools, 1, { status: sshOk ? 'pass' : 'fail', detail: sshOk ? undefined : 'ssh not found' });
+        tally.push(sshOk ? 'pass' : 'fail');
 
-      update(setInfra, 2, { status: 'checking' });
-      try {
-        const volumeOk = await provider.checkVolume(envRecord);
-        update(setInfra, 2, {
-          status: volumeOk ? 'pass' : 'fail',
-          detail: volumeOk ? undefined : 'not found — run: bun run setup',
+        // ── Credentials ────────────────────────────────────────────────────────
+        update(setCreds, 0, { status: 'checking' });
+        const envRecord = env as Record<string, string>;
+        const hasProviderCreds = provider.credentials.every(
+          c => c.optional || envRecord[c.envKey],
+        );
+        if (hasProviderCreds) {
+          const result = await provider.validateCredentials(envRecord);
+          const st = result.ok ? 'pass' : 'fail';
+          update(setCreds, 0, {
+            status: st,
+            detail: result.ok ? undefined : `${result.error} — run: bun run setup`,
+          });
+          tally.push(st);
+        } else {
+          update(setCreds, 0, { status: 'fail', detail: 'not set — run: bun run setup' });
+          tally.push('fail');
+        }
+
+        // ── Infrastructure ─────────────────────────────────────────────────────
+        update(setInfra, 0, { status: 'checking' });
+        const s3Key    = envRecord[provider.s3KeyEnvVar];
+        const s3Secret = envRecord[provider.s3SecretEnvVar];
+        if (s3Key && s3Secret) {
+          const s3Endpoint = provider.s3EndpointEnvVar
+            ? envRecord[provider.s3EndpointEnvVar]
+            : provider.s3Endpoint;
+          const s3Bucket =
+            (provider.s3BucketEnvVar ? envRecord[provider.s3BucketEnvVar] : undefined) ?? provider.s3Bucket;
+          try {
+            const s3 = makeS3Client(s3Key, s3Secret, s3Endpoint);
+            await s3.send(new HeadBucketCommand({ Bucket: s3Bucket }));
+            update(setInfra, 0, { status: 'pass' });
+            tally.push('pass');
+          } catch {
+            update(setInfra, 0, { status: 'fail', detail: 'bucket not found — run: bun run setup' });
+            tally.push('fail');
+          }
+        } else {
+          update(setInfra, 0, { status: 'fail', detail: 'S3 credentials not set — run: bun run setup' });
+          tally.push('fail');
+        }
+
+        update(setInfra, 1, { status: 'checking' });
+        const SSH_KEY = envRecord.SSH_KEY ?? `${process.env.HOME}/.ssh/astro-server`;
+        const sshExists = fs.existsSync(SSH_KEY) && fs.existsSync(`${SSH_KEY}.pub`);
+        update(setInfra, 1, {
+          status: sshExists ? 'pass' : 'fail',
+          detail: sshExists ? SSH_KEY : `key not found at ${SSH_KEY} — run: bun run setup`,
         });
-      } catch {
-        update(setInfra, 2, { status: 'fail', detail: 'could not check — run: bun run setup' });
-      }
+        tally.push(sshExists ? 'pass' : 'fail');
 
-      update(setInfra, 3, { status: 'checking' });
-      try {
-        const serverRunning = await provider.checkServer(envRecord);
-        update(setInfra, 3, {
-          status: serverRunning ? 'warn' : 'pass',
-          detail: serverRunning ? 'server is currently running' : 'stopped (idle)',
-        });
-      } catch {
-        update(setInfra, 3, { status: 'fail', detail: 'could not check' });
-      }
+        update(setInfra, 2, { status: 'checking' });
+        try {
+          const volumeOk = await provider.checkVolume(envRecord);
+          const st = volumeOk ? 'pass' : 'fail';
+          update(setInfra, 2, {
+            status: st,
+            detail: volumeOk ? undefined : 'not found — run: bun run setup',
+          });
+          tally.push(st);
+        } catch {
+          update(setInfra, 2, { status: 'fail', detail: 'could not check — run: bun run setup' });
+          tally.push('fail');
+        }
 
-      // ── Tally ──────────────────────────────────────────────────────────────
-      const all = [...tools, ...creds, ...infra];
-      setPassed(all.filter(c => c.status === 'pass' || c.status === 'warn').length);
-      setFailed(all.filter(c => c.status === 'fail').length);
-      setPhase('done');
-    })();
+        update(setInfra, 3, { status: 'checking' });
+        let instanceInTfState = false;
+        try {
+          /** True when Terraform state has a live `server_ip` output (instance resource present). */
+          instanceInTfState = await provider.checkServer(envRecord);
+          const st = instanceInTfState ? 'warn' : 'pass';
+          update(setInfra, 3, {
+            status: st,
+            detail: instanceInTfState
+              ? 'Vultr instance in state — billed for compute until `make stop`'
+              : 'no instance in Terraform state (`make start` provisions the VM)',
+          });
+          tally.push(st);
+        } catch {
+          update(setInfra, 3, { status: 'fail', detail: 'could not check' });
+          tally.push('fail');
+        }
+
+        if (cancelled) return;
+        setComputeInState(instanceInTfState);
+        setPassed(tally.filter(s => s === 'pass' || s === 'warn').length);
+        setFailed(tally.filter(s => s === 'fail').length);
+        setPhase('done');
+      })();
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -226,9 +252,22 @@ const Preflight: React.FC = () => {
                 Run <Text color={colors.orange}>bun run setup</Text> to fix.
               </Text>
             </Box>
+          ) : computeInState ? (
+            <Box flexDirection="column">
+              <Text color={colors.green} bold>✓  All systems go — compute is provisioned.</Text>
+              <Text color={colors.muted}>
+                <Text color={colors.orange}>make ip</Text>
+                {' / '}
+                <Text color={colors.orange}>make ssh</Text>
+                {' · '}
+                <Text color={colors.orange}>make logs</Text>
+                {' · stop VM (keep saves volume) with '}
+                <Text color={colors.orange}>make stop</Text>
+              </Text>
+            </Box>
           ) : (
             <Text color={colors.green} bold>
-              ✓  All systems go. Run <Text color={colors.orange}>make start</Text> to launch.
+              ✓  All systems go. Run <Text color={colors.orange}>make start</Text> to launch the VM.
             </Text>
           )}
         </Box>

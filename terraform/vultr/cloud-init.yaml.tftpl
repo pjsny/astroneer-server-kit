@@ -1,0 +1,17 @@
+#cloud-config
+package_update: true
+packages:
+  - curl
+  - ca-certificates
+
+write_files:
+  - path: /run/astro-server-name.b64
+    permissions: '0644'
+    content: ${server_name_b64}
+
+runcmd:
+  - base64 -d /run/astro-server-name.b64 > /run/astro-server-name
+  - rm -f /run/astro-server-name.b64
+  - curl -fsSL "${bootstrap_url}" -o /run/astro-bootstrap.sh
+  # Invoke with bash — direct exec on /run sometimes hits Permission denied (exec bit / mount nuances on some images).
+  - bash /run/astro-bootstrap.sh

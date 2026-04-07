@@ -1,9 +1,6 @@
 # astroneer-server-kit
 
-> Self-hosted Astroneer dedicated server on Hetzner — one-click start/stop via GitHub Actions, auto-shuts down when idle, world saves always persist.
-
-![Start Server](https://github.com/pjsny/astroneer-server-kit/actions/workflows/start.yml/badge.svg)
-![Stop Server](https://github.com/pjsny/astroneer-server-kit/actions/workflows/stop.yml/badge.svg)
+> Self-hosted Astroneer dedicated server on **Vultr** (Ubuntu + **Wine** + Windows Steam depot 728470) — **`make start` / `make stop`** run Terraform locally (no GitHub PAT).
 
 **Up to 8 players · Steam only (no Xbox/Game Pass crossplay) · ~$4/mo while running · ~$0.05/mo while stopped**
 
@@ -13,8 +10,8 @@
 
 **First time only (~5 min):**
 
-1. **Fork this repo** (top-right on this page) — you need your own copy so GitHub Actions runs against your account
-2. Clone your fork and run setup:
+1. **Fork & clone** this repo (needed so cloud-init can pull `bootstrap.sh` from **your** `main` branch on GitHub).
+2. From the clone, run setup:
 
 ```bash
 brew install terraform bun
@@ -24,28 +21,26 @@ bun install
 bun run setup
 ```
 
-The wizard asks for your Hetzner credentials and handles everything else automatically.
+The wizard asks for your **Vultr API key** (and optional region). It runs `terraform/bootstrap/` to **create an Object Storage subscription**, writes S3 credentials into `.env`, and creates the remote-state bucket — no manual S3 keys in the panel.
 
 **Every session:**
 
 ```bash
-make start   # spin up the server (~3 min to boot)
-# play — server auto-stops after 60 min idle
-make stop    # or stop it manually when done
+make start   # terraform apply (VM + first-boot bootstrap; allow 15–25+ min before joining)
+make stop    # terraform destroy (VM only; saves stay on the block volume)
 ```
 
 **Connect in-game:** Multiplayer → Servers → Add Server → `YOUR_IP:8777`
 
-The IP appears in the [Actions](https://github.com/pjsny/astroneer-server-kit/actions) tab after `make start` finishes.
+Run `make ip` (or `cd terraform/vultr && terraform output -raw server_ip`) after `make start` completes.
 
 ---
 
 ## How it works
 
-- **Start/stop** the server with one click in GitHub Actions (or `make start` / `make stop`)
-- Server **auto-shuts down** after 60 minutes of no player activity
-- World saves live on a **persistent Hetzner Volume** — never lost when the server is destroyed
-- Everything is provisioned with **Terraform** — no manual server setup
+- **`make start` / `make stop`** call Terraform on your machine using credentials in `.env` (no GitHub token required)
+- World saves live on a **persistent Vultr block volume** — data survives when the VM is destroyed (`make stop`)
+- Everything is provisioned with **Terraform**
 
 ---
 
@@ -53,19 +48,23 @@ The IP appears in the [Actions](https://github.com/pjsny/astroneer-server-kit/ac
 
 - [Terraform](https://developer.hashicorp.com/terraform/install) — `brew install terraform`
 - [Bun](https://bun.sh) — `brew install bun`
-- A [Hetzner](https://hetzner.com/cloud) account
-- A [GitHub Personal Access Token](https://github.com/settings/tokens) with `repo` and `workflow` scopes
+- A [Vultr](https://www.vultr.com/) account, **Object Storage** bucket + S3 keys, and patience (Wine + SteamCMD on first boot is slow and **best-effort** — UE under Wine can break on updates)
+- **No** GitHub personal access token for the default path
 
 ---
 
-## Hetzner credentials
+## Vultr credentials
 
-`bin/setup` will prompt you for these:
+Run `make setup`:
 
-| Credential | Where to get it |
-|------------|-----------------|
-| Cloud API token | console.hetzner.cloud → project → Security → API Tokens → Generate |
-| Object Storage access key + secret | console.hetzner.cloud → project → Security → S3 Credentials → Generate |
+| Input | Notes |
+|--------|--------|
+| API key | my.vultr.com → **API** → Personal access token |
+| Region (optional) | Slug such as `ewr` — must support **Object Storage** in that region; blank = `ewr` |
+
+Setup stores **`terraform/bootstrap/terraform.tfstate` locally** (gitignored) — that stack owns the Object Storage subscription. **Back it up** if you rely on it; losing only that file while keeping `.env` is recoverable only if you still have the subscription in the Vultr panel.
+
+**Fork default branch:** cloud-init downloads `bootstrap.sh` from `raw.githubusercontent.com/…/main/…`. Use **`main`** as the default branch on your fork (or edit `cloud-init.yaml.tftpl` / `main.tf` locals).
 
 ---
 
@@ -81,19 +80,13 @@ make logs    # tail the server logs
 make update  # update game to latest version
 ```
 
-**Via GitHub Actions (useful for sharing with friends):**
-
-Actions → Start Server → Run workflow
-
-The workflow summary shows your IP and connect address.
-
 ---
 
 ## Connecting in-game
 
 Astroneer → Multiplayer → Servers → Add Server
 
-- **IP:** shown in the Start Server workflow summary
+- **IP:** `make ip` (after `make start` completes)
 - **Port:** `8777`
 
 ---

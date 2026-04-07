@@ -6,7 +6,9 @@
     "module": "esnext",
     "target": "esnext",
     "strict": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "types": ["bun-types"],
+    "skipLibCheck": true
   },
   "include": ["scripts/**/*"]
 }

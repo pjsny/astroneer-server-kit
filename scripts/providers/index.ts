@@ -1,10 +1,8 @@
-import type { Provider } from './types.js';
+import type { Provider } from "./types.js";
+import { vultr } from "./vultr.js";
 
-// No providers registered yet.
-// Once you've chosen a cloud provider, create a file in this directory
-// implementing the Provider interface from types.ts and register it here.
-export const providers: Provider[] = [];
+export const providers: Provider[] = [vultr];
 
-export const defaultProvider = providers[0] as Provider | undefined;
+export const defaultProvider = providers[0] as Provider;
 
 export type { Provider };

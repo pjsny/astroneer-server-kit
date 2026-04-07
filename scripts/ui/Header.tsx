@@ -5,11 +5,16 @@ import { useFrame } from './useFrame.js';
 
 interface HeaderProps {
   subtitle?: string;
+  /**
+   * When false, the side stars stay static. Use in the setup wizard (fast TextInput updates) to avoid
+   * React 19 + Ink reconciler warnings from overlapping `useFrame` ticks and parent re-renders.
+   */
+  animated?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ subtitle }) => {
-  const frame = useFrame(450);
-  const star = starFrames[frame % starFrames.length];
+export const Header: React.FC<HeaderProps> = ({ subtitle, animated = true }) => {
+  const frame = useFrame(450, animated);
+  const star = animated ? starFrames[frame % starFrames.length] : '✦';
 
   return (
     <Box

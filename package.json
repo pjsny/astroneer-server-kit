@@ -2,16 +2,19 @@
   "name": "astroneer-server-kit",
   "version": "1.0.0",
   "scripts": {
-    "setup":     "bun scripts/setup.tsx",
-    "preflight": "bun scripts/preflight.tsx",
-    "start":     "bun scripts/start.ts",
-    "stop":      "bun scripts/stop.ts"
+    "setup":       "bun scripts/setup.tsx",
+    "setup:debug": "ASTRONEER_SETUP_DEBUG=1 bun scripts/setup.tsx",
+    "preflight":   "bun scripts/preflight.tsx",
+    "start":       "bun scripts/start.ts",
+    "stop":         "bun scripts/stop.ts",
+    "destroy-all":  "bun scripts/destroy-all.ts",
+    "ip":             "bun scripts/ip.ts",
+    "status":         "bun scripts/status.tsx"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",
     "ink": "^6.0.0",
     "ink-text-input": "^6.0.0",
-    "tweetsodium": "^0.0.5",
     "react": "^19.0.0"
   },
   "devDependencies": {

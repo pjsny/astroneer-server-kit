@@ -6,6 +6,10 @@ export interface ProviderCredential {
   envKey: string;
   hint:   string;
   mask:   boolean;
+  /** If true, user can press Enter with an empty value (e.g. region default). */
+  optional?: boolean;
+  /** When set, the wizard shows an arrow-key list instead of a text field (e.g. region). */
+  selectOptions?: Array<{ value: string; label: string }>;
 }
 
 export interface Provider {
@@ -21,8 +25,18 @@ export interface Provider {
   region: string;
 
   // ── Object storage (used for Terraform remote state) ──────────────────────
+  /** Default endpoint URL when `s3EndpointEnvVar` is not set */
   s3Endpoint:    string;
+  /**
+   * When set, the effective endpoint is read from that `.env` key at runtime
+   * (needed for Vultr Object Storage — hostname varies by cluster).
+   */
+  s3EndpointEnvVar?: string;
   s3Bucket:      string;
+  /** When set, read bucket name from this `.env` key (must be unique on your object cluster). */
+  s3BucketEnvVar?: string;
+  /** Key for the state object inside the bucket */
+  s3StateKey?:   string;
   /** envKey of the credential that holds the S3 access key */
   s3KeyEnvVar:   string;
   /** envKey of the credential that holds the S3 secret key */

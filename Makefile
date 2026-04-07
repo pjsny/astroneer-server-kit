@@ -5,28 +5,35 @@
 export
 
 SSH_KEY  ?= $(HOME)/.ssh/astro-server
-SSH_USER  = Administrator
-TF_DIR    = terraform/scaleway
+SSH_USER  = root
+TF_DIR    = terraform/vultr
 
-.PHONY: help setup preflight start stop ssh logs update ip
+.PHONY: help setup setup-debug preflight start stop destroy-all ssh logs wine-bugpack update ip status
 
 help:
 	@echo ""
 	@echo "  Astroneer Server Kit"
 	@echo "  ──────────────────────────────────"
-	@echo "  make setup      First-time setup wizard"
-	@echo "  make preflight  Check everything is configured"
+	@echo "  make setup         First-time setup wizard"
+	@echo "  make setup-debug   Same, with on-screen error detail (see ASTRONEER_SETUP_DEBUG)"
+	@echo "  make preflight     Check everything is configured"
 	@echo ""
-	@echo "  make start      Start the server"
-	@echo "  make stop       Stop the server"
-	@echo "  make ip         Show the server's current IP"
-	@echo "  make ssh        SSH into the running server"
-	@echo "  make logs       Tail the Astroneer server logs"
-	@echo "  make update     Update the game to the latest version"
+	@echo "  make start         Start the server"
+	@echo "  make stop          Stop the server (VM only; keeps saves volume)"
+	@echo "  make destroy-all   Tear down vultr stack + setup Object Storage (full reset)"
+	@echo "  make ip            Show the server's current IP"
+	@echo "  make status        In-game address, Terraform summary, optional SSH service check"
+	@echo "  make ssh           SSH into the running server"
+	@echo "  make logs          Recent journal + tail -F service.log (Wine); Unreal -log under Astro/Saved/Logs/"
+	@echo "  make wine-bugpack  SSH: versions + log tails for Wine TLS debugging / WineHQ"
+	@echo "  make update        Update the game to the latest version"
 	@echo ""
 
 setup:
 	@bun run scripts/setup.tsx
+
+setup-debug:
+	@ASTRONEER_SETUP_DEBUG=1 bun run scripts/setup.tsx
 
 preflight:
 	@bun run scripts/preflight.tsx
@@ -37,19 +44,29 @@ start:
 stop:
 	@bun run scripts/stop.ts
 
+destroy-all:
+	@bun run scripts/destroy-all.ts
+
 ip:
-	@cd $(TF_DIR) && terraform output -raw server_ip 2>/dev/null || echo "Server is not running."
+	@bun run scripts/ip.ts || echo "(no IP — run make start once, or check .env / Terraform state)"
+
+status:
+	@bun run scripts/status.tsx
 
 ssh: _require_ip
 	@ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no $(SSH_USER)@$$(make -s ip)
 
 logs: _require_ip
 	@ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no $(SSH_USER)@$$(make -s ip) \
-		"powershell -Command \"Get-Content -Path 'C:\\astro-server\\Astro\\Saved\\Logs\\AstroServer.log' -Wait -Tail 50\""
+		"echo '--- last 80 lines: systemd (start/stop) ---'; journalctl -u astroneer -n 80 --no-pager; echo; echo '--- tail -F service.log (Wine stderr/stdout); Unreal: tail -f ~/astro-server/Astro/Saved/Logs/*.log'; tail -n 5 -F /home/astroneer/logs/service.log"
+
+wine-bugpack: _require_ip
+	@ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no $(SSH_USER)@$$(make -s ip) \
+		"sudo /usr/local/bin/astro-wine-bugpack"
 
 update: _require_ip
 	@ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no $(SSH_USER)@$$(make -s ip) \
-		"powershell -ExecutionPolicy Bypass -File 'C:\\astro-setup\\update.ps1'"
+		"/usr/local/bin/astro-update"
 
 _require_ip:
 	@IP=$$(make -s ip); \

@@ -41,7 +41,7 @@ body:
     id: error-output
     attributes:
       label: Error output
-      description: Paste any terminal output or GitHub Actions logs here.
+      description: Paste any relevant terminal output here.
       render: shell
 
   - type: dropdown
