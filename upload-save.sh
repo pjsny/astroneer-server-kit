@@ -12,6 +12,8 @@ set -e
 
 SERVER_IP="$1"
 SAVE_FILE="$2"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/astro-server}"
+SSH_OPTS="-i $SSH_KEY -o StrictHostKeyChecking=no"
 
 if [ -z "$SERVER_IP" ] || [ -z "$SAVE_FILE" ]; then
   echo "Usage: bash upload-save.sh <server-ip> <path-to-save-file>"
@@ -24,26 +26,23 @@ if [ ! -f "$SAVE_FILE" ]; then
 fi
 
 SAVE_NAME=$(basename "$SAVE_FILE" .savegame)
-REMOTE_SAVES="/mnt/saves/SaveGames"
-REMOTE_SETTINGS="/mnt/saves/AstroServerSettings.ini"
 
 echo "==> Uploading $SAVE_FILE to server..."
-scp "$SAVE_FILE" "root@$SERVER_IP:$REMOTE_SAVES/"
+# Windows OpenSSH accepts forward-slash paths for scp
+scp $SSH_OPTS "$SAVE_FILE" "Administrator@$SERVER_IP:/D:/SaveGames/$SAVE_NAME.savegame"
 
-echo "==> Setting correct permissions..."
-ssh root@$SERVER_IP "chmod 644 $REMOTE_SAVES/$SAVE_NAME.savegame && chown astroneer:astroneer $REMOTE_SAVES/$SAVE_NAME.savegame"
-
-echo "==> Activating save: $SAVE_NAME"
-ssh root@$SERVER_IP "
-  systemctl stop astroneer
-  # Update or add ActiveSaveFileDescriptiveName
-  if grep -q 'ActiveSaveFileDescriptiveName' $REMOTE_SETTINGS; then
-    sed -i 's/^ActiveSaveFileDescriptiveName=.*/ActiveSaveFileDescriptiveName=$SAVE_NAME/' $REMOTE_SETTINGS
-  else
-    echo 'ActiveSaveFileDescriptiveName=$SAVE_NAME' >> $REMOTE_SETTINGS
-  fi
-  systemctl start astroneer
-"
+echo "==> Activating save and restarting server..."
+ssh $SSH_OPTS "Administrator@$SERVER_IP" "powershell -Command \"\
+  Stop-Service astroneer; \
+  \$settings = 'D:\\AstroServerSettings.ini'; \
+  \$lines = Get-Content \$settings; \
+  if (\$lines -match 'ActiveSaveFileDescriptiveName') { \
+    \$lines = \$lines -replace 'ActiveSaveFileDescriptiveName=.*', 'ActiveSaveFileDescriptiveName=$SAVE_NAME'; \
+  } else { \
+    \$lines += 'ActiveSaveFileDescriptiveName=$SAVE_NAME'; \
+  } \
+  Set-Content -Path \$settings -Value \$lines -Encoding UTF8; \
+  Start-Service astroneer\""
 
 echo ""
 echo "Done! World '$SAVE_NAME' is now active on the server."

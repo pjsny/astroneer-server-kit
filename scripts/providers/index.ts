@@ -1,11 +1,10 @@
 import type { Provider } from './types.js';
-import { digitalocean } from './digitalocean.js';
-import { hetzner } from './hetzner.js';
 
-// Registry of all supported providers.
-// Disabled providers are shown in the UI but cannot be selected.
-export const providers: Provider[] = [digitalocean, hetzner];
+// No providers registered yet.
+// Once you've chosen a cloud provider, create a file in this directory
+// implementing the Provider interface from types.ts and register it here.
+export const providers: Provider[] = [];
 
-export const defaultProvider = digitalocean;
+export const defaultProvider = providers[0] as Provider | undefined;
 
 export type { Provider };

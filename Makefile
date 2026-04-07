@@ -4,7 +4,9 @@
 -include .env
 export
 
-SSH_KEY ?= $(HOME)/.ssh/astro-server
+SSH_KEY  ?= $(HOME)/.ssh/astro-server
+SSH_USER  = Administrator
+TF_DIR    = terraform/scaleway
 
 .PHONY: help setup preflight start stop ssh logs update ip
 
@@ -24,10 +26,10 @@ help:
 	@echo ""
 
 setup:
-	@bun run scripts/setup.ts
+	@bun run scripts/setup.tsx
 
 preflight:
-	@bun run scripts/preflight.ts
+	@bun run scripts/preflight.tsx
 
 start:
 	@bun run scripts/start.ts
@@ -36,18 +38,18 @@ stop:
 	@bun run scripts/stop.ts
 
 ip:
-	@cd terraform && terraform output -raw server_ip 2>/dev/null || echo "Server is not running."
+	@cd $(TF_DIR) && terraform output -raw server_ip 2>/dev/null || echo "Server is not running."
 
 ssh: _require_ip
-	@ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no root@$$(make -s ip)
+	@ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no $(SSH_USER)@$$(make -s ip)
 
 logs: _require_ip
-	@ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no root@$$(make -s ip) \
-		"journalctl -u astroneer -f --no-pager"
+	@ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no $(SSH_USER)@$$(make -s ip) \
+		"powershell -Command \"Get-Content -Path 'C:\\astro-server\\Astro\\Saved\\Logs\\AstroServer.log' -Wait -Tail 50\""
 
 update: _require_ip
-	@ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no root@$$(make -s ip) \
-		"bash /opt/astro-setup/update.sh"
+	@ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no $(SSH_USER)@$$(make -s ip) \
+		"powershell -ExecutionPolicy Bypass -File 'C:\\astro-setup\\update.ps1'"
 
 _require_ip:
 	@IP=$$(make -s ip); \

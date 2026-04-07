@@ -20,32 +20,34 @@ jobs:
           terraform_version: "1.7.0"
 
       - name: Terraform Init
-        working-directory: terraform
+        working-directory: terraform/scaleway
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
         run: terraform init
 
       - name: Terraform Apply
-        working-directory: terraform
+        working-directory: terraform/scaleway
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
-          TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
+          TF_VAR_scw_access_key: ${{ secrets.SCW_ACCESS_KEY }}
+          TF_VAR_scw_secret_key: ${{ secrets.SCW_SECRET_KEY }}
+          TF_VAR_scw_project_id: ${{ secrets.SCW_PROJECT_ID }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
           TF_VAR_repo_url: ${{ github.server_url }}/${{ github.repository }}
         run: terraform apply -auto-approve
 
       - name: Get server IP
-        working-directory: terraform
+        working-directory: terraform/scaleway
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
         run: |
           IP=$(terraform output -raw server_ip)
           echo "## Server is starting up!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Connect to:** \`$IP:8777\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Give it ~3 minutes to fully boot before connecting." >> $GITHUB_STEP_SUMMARY
-          echo "**Auto-shutdown in:** ${{ inputs.session_hours }} hours (if empty)" >> $GITHUB_STEP_SUMMARY
+          echo "Give it ~5 minutes to fully boot before connecting." >> $GITHUB_STEP_SUMMARY
+          echo "**Auto-shutdown in:** ${{ inputs.session_hours }} hours (if idle)" >> $GITHUB_STEP_SUMMARY

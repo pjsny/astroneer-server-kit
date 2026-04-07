@@ -16,19 +16,21 @@ jobs:
           terraform_version: "1.7.0"
 
       - name: Terraform Init
-        working-directory: terraform
+        working-directory: terraform/scaleway
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
         run: terraform init
 
       - name: Check if server is running
         id: check
-        working-directory: terraform
+        working-directory: terraform/scaleway
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
-          TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
+          TF_VAR_scw_access_key: ${{ secrets.SCW_ACCESS_KEY }}
+          TF_VAR_scw_secret_key: ${{ secrets.SCW_SECRET_KEY }}
+          TF_VAR_scw_project_id: ${{ secrets.SCW_PROJECT_ID }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
           TF_VAR_repo_url: ${{ github.server_url }}/${{ github.repository }}
         run: |
@@ -47,15 +49,22 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
 
           LAST=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-            root@${{ steps.check.outputs.ip }} \
-            "grep -E 'RemoteRole|joined|left|PlayerController' \
-              /home/astroneer/astro-server/Astro/Saved/Logs/AstroServer.log 2>/dev/null \
-              | tail -1 | grep -oP '\[\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}' | tr -d '[' \
-              || echo ''" 2>/dev/null || echo "")
+            Administrator@${{ steps.check.outputs.ip }} \
+            "powershell -Command \"\
+              \$log = 'C:\\astro-server\\Astro\\Saved\\Logs\\AstroServer.log'; \
+              if (Test-Path \$log) { \
+                Get-Content \$log | Select-String 'RemoteRole|joined|left|PlayerController' | \
+                Select-Object -Last 1 | ForEach-Object { \
+                  if (\$_ -match '\[(\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2})') { \$Matches[1] } \
+                } \
+              }\"" 2>/dev/null || echo "")
 
           UPTIME=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-            root@${{ steps.check.outputs.ip }} \
-            "awk '{print int(\$1)}' /proc/uptime" 2>/dev/null || echo "0")
+            Administrator@${{ steps.check.outputs.ip }} \
+            "powershell -Command \"\
+              \$boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime; \
+              [int]([datetime]::Now - \$boot).TotalSeconds\"" \
+            2>/dev/null || echo "0")
 
           echo "last_activity=$LAST" >> $GITHUB_OUTPUT
           echo "uptime=$UPTIME" >> $GITHUB_OUTPUT
@@ -89,11 +98,13 @@ jobs:
 
       - name: Destroy idle server
         if: steps.check.outputs.running == 'true' && steps.decide.outputs.stop == 'true'
-        working-directory: terraform
+        working-directory: terraform/scaleway
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
-          TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCW_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_SECRET_KEY }}
+          TF_VAR_scw_access_key: ${{ secrets.SCW_ACCESS_KEY }}
+          TF_VAR_scw_secret_key: ${{ secrets.SCW_SECRET_KEY }}
+          TF_VAR_scw_project_id: ${{ secrets.SCW_PROJECT_ID }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
           TF_VAR_repo_url: ${{ github.server_url }}/${{ github.repository }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -102,14 +113,13 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
 
-          ssh -o StrictHostKeyChecking=no root@${{ steps.check.outputs.ip }} \
-            "systemctl stop astroneer" || true
+          ssh -o StrictHostKeyChecking=no Administrator@${{ steps.check.outputs.ip }} \
+            "powershell -Command Stop-Service astroneer" || true
 
           terraform destroy -auto-approve \
-            -target=digitalocean_droplet.astro \
-            -target=digitalocean_volume_attachment.saves \
-            -target=digitalocean_firewall.astro \
-            -target=digitalocean_ssh_key.astro
+            -target=scaleway_instance_server.astro \
+            -target=scaleway_instance_security_group.astro \
+            -target=scaleway_account_ssh_key.astro
 
           echo "Auto-stopped: ${{ steps.decide.outputs.reason }}"
 
