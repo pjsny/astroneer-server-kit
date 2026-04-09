@@ -9,10 +9,4 @@ bun.lockb
 saves/
 *.sav
 *.tmp
-astro-server-bin/
-
-# Terraform (local plugin cache — lock file is committed)
-.terraform/
-terraform/bootstrap/.terraform/
-terraform/bootstrap/*.tfstate
-terraform/bootstrap/*.tfstate.*
+astroneer-server-kit-bin/

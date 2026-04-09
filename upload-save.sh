@@ -12,7 +12,7 @@ set -e
 
 SERVER_IP="$1"
 SAVE_FILE="$2"
-SSH_KEY="${SSH_KEY:-$HOME/.ssh/astro-server}"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/astroneer-server-kit}"
 SSH_OPTS="-i $SSH_KEY -o StrictHostKeyChecking=no"
 
 if [ -z "$SERVER_IP" ] || [ -z "$SAVE_FILE" ]; then

@@ -12,7 +12,7 @@ export function detectGitHubRepoSlug(): string {
 }
 
 /**
- * `https://github.com/user/repo` for Terraform `repo_url` (cloud-init bootstrap).
+ * `https://github.com/user/repo` for status / docs (e.g. **astroneer-server-kit**).
  * Uses `GITHUB_REPO` from env when set, otherwise `git remote origin`.
  */
 export function resolveRepoUrl(env: Record<string, string | undefined>): string {

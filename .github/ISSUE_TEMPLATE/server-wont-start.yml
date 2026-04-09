@@ -6,8 +6,8 @@ body:
     attributes:
       value: |
         Let's figure out what's going on. Check these first:
-        - Did `make start` / `terraform apply` finish without errors?
-        - Did you wait ~15–25+ minutes on first boot (Wine + SteamCMD) before trying to connect?
+        - Did `make start` (fly deploy) finish without errors?
+        - Did you wait for the first deploy + in-container game download (DepotDownloader; often 20–40+ minutes) before trying to connect?
         - Are you using the current IP from `make ip` (not a cached one)?
 
   - type: dropdown
@@ -15,7 +15,7 @@ body:
     attributes:
       label: What exactly is happening?
       options:
-        - `make start` / Terraform fails (paste output below)
+        - `make start` / fly deploy fails (paste output below)
         - Start succeeds but I can't connect in-game
         - Server starts then immediately crashes
         - Server works for a while then drops everyone
@@ -24,17 +24,17 @@ body:
       required: true
 
   - type: textarea
-    id: terraform-log
+    id: deploy-log
     attributes:
-      label: Terraform / local command output
-      description: Output from `make start` or `terraform apply` if provisioning failed.
+      label: Deploy / local command output
+      description: Output from `make start` / `fly deploy` if provisioning failed.
       render: shell
 
   - type: textarea
     id: server-log
     attributes:
-      label: Server log (if you can SSH in)
-      description: Output of `make logs` or `journalctl -u astroneer -n 100`
+      label: Server log
+      description: Output of `make logs` (fly logs) or `fly ssh console` + relevant files under /data
       render: shell
 
   - type: input

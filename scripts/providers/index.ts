@@ -1,7 +1,7 @@
 import type { Provider } from "./types.js";
-import { vultr } from "./vultr.js";
+import { fly } from "./fly.js";
 
-export const providers: Provider[] = [vultr];
+export const providers: Provider[] = [fly];
 
 export const defaultProvider = providers[0] as Provider;
 

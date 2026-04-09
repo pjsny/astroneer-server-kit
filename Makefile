@@ -1,32 +1,24 @@
-# Astroneer Server Kit
-# Run 'make help' to see all commands.
-
+# Astroneer Server Kit — Fly.io
 -include .env
 export
 
-SSH_KEY  ?= $(HOME)/.ssh/astro-server
-SSH_USER  = root
-TF_DIR    = terraform/vultr
-
-.PHONY: help setup setup-debug preflight start stop destroy-all ssh logs wine-bugpack update ip status
+.PHONY: help setup setup-debug preflight start stop destroy-all ssh logs update ip status
 
 help:
 	@echo ""
-	@echo "  Astroneer Server Kit"
+	@echo "  Astroneer Server Kit (Fly.io)"
 	@echo "  ──────────────────────────────────"
 	@echo "  make setup         First-time setup wizard"
-	@echo "  make setup-debug   Same, with on-screen error detail (see ASTRONEER_SETUP_DEBUG)"
-	@echo "  make preflight     Check everything is configured"
+	@echo "  make setup-debug   Same with on-screen error detail"
+	@echo "  make preflight     Check flyctl + .env + volume"
 	@echo ""
-	@echo "  make start         Start the server"
-	@echo "  make stop          Stop the server (VM only; keeps saves volume)"
-	@echo "  make destroy-all   Tear down vultr stack + setup Object Storage (full reset)"
-	@echo "  make ip            Show the server's current IP"
-	@echo "  make status        In-game address, Terraform summary, optional SSH service check"
-	@echo "  make ssh           SSH into the running server"
-	@echo "  make logs          Recent journal + tail -F service.log (Wine); Unreal -log under Astro/Saved/Logs/"
-	@echo "  make wine-bugpack  SSH: versions + log tails for Wine TLS debugging / WineHQ"
-	@echo "  make update        Update the game to the latest version"
+	@echo "  make start         fly deploy (build + run dedicated server)"
+	@echo "  make stop          Scale Machines to 0 (volume retained)"
+	@echo "  make destroy-all   fly apps destroy (data loss — see Fly docs)"
+	@echo "  make status        Brief Fly + connect summary"
+	@echo "  make logs          fly logs (follow)"
+	@echo "  make ip            List Fly IPv4 for the app"
+	@echo "  make ssh           fly ssh console (same as: fly ssh console -a \$$FLY_APP_NAME)"
 	@echo ""
 
 setup:
@@ -48,29 +40,16 @@ destroy-all:
 	@bun run scripts/destroy-all.ts
 
 ip:
-	@bun run scripts/ip.ts || echo "(no IP — run make start once, or check .env / Terraform state)"
+	@bun run scripts/ip.ts
 
 status:
 	@bun run scripts/status.tsx
 
-ssh: _require_ip
-	@ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no $(SSH_USER)@$$(make -s ip)
+logs:
+	@fly logs -a "$(FLY_APP_NAME)"
 
-logs: _require_ip
-	@ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no $(SSH_USER)@$$(make -s ip) \
-		"echo '--- last 80 lines: systemd (start/stop) ---'; journalctl -u astroneer -n 80 --no-pager; echo; echo '--- tail -F service.log (Wine stderr/stdout); Unreal: tail -f ~/astro-server/Astro/Saved/Logs/*.log'; tail -n 5 -F /home/astroneer/logs/service.log"
+ssh:
+	@fly ssh console -a "$(FLY_APP_NAME)"
 
-wine-bugpack: _require_ip
-	@ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no $(SSH_USER)@$$(make -s ip) \
-		"sudo /usr/local/bin/astro-wine-bugpack"
-
-update: _require_ip
-	@ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no $(SSH_USER)@$$(make -s ip) \
-		"/usr/local/bin/astro-update"
-
-_require_ip:
-	@IP=$$(make -s ip); \
-	if [ -z "$$IP" ] || [ "$$IP" = "Server is not running." ]; then \
-		echo "Server is not running. Run 'make start' first."; \
-		exit 1; \
-	fi
+update: start
+	@echo "(update == redeploy via make start / fly deploy)"

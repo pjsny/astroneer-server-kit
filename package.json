@@ -12,7 +12,6 @@
     "status":         "bun scripts/status.tsx"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.600.0",
     "ink": "^6.0.0",
     "ink-text-input": "^6.0.0",
     "react": "^19.0.0"

@@ -1,0 +1,12 @@
+# Build context: Dockerfile + docker/ only; keep images small and fast.
+.git
+.github
+node_modules
+.env
+.env.*
+*.md
+*.log
+tmp/
+scripts
+bootstrap
+config
